@@ -97,4 +97,4 @@ MIT License — free to use, modify, and distribute.
 
 ## 🧵 Author
 
-Built with ❤️ using Arduino by **YourNameHere**
+Built with ❤️ using Arduino by eautify
