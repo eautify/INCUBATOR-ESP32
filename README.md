@@ -1,73 +1,100 @@
-Arduino Incubator Controller
+# 🐣 Arduino Incubator Controller
 
-This project is an Arduino-based incubator controller with:
+This is an Arduino-based incubator controller that:
 
-- DHT22 sensor for temperature and humidity measurements.
-- Door switch with debounce logic and door-open alarm.
-- Candling relay control (currently disabled, planned for future serial control).
-- Watchdog timer enabled for system reliability.
+- Monitors **temperature** and **humidity** using a **DHT22 sensor**
+- Displays readings on a **16x2 I2C LCD**
+- Controls a **heater** and **humidifier** using **relays**
+- Detects **door status** via a **reed switch**
+- Sends all data to the **Serial Monitor** for integration with Python or logging tools
 
----------------------------------------------------------------------
+---
 
-Pin Assignments
+## 📦 Features
 
-Function          : Arduino Pin
-------------------------------
-DHT22 Data        : 2
-Candling Relay    : 4
-Door Switch       : 5
-Door Alarm        : 6
+- 🌡️ Real-time temperature and humidity monitoring  
+- 🔁 Automatic control of heating and humidifying elements  
+- 🚪 Door open/close detection  
+- 🖥️ Display of current status on 16x2 I2C LCD  
+- 📡 Serial output of all readings and actuator states  
 
----------------------------------------------------------------------
+---
 
-Features
+## 🔧 Hardware Requirements
 
-- Reads temperature and humidity every 2 seconds.
-- Detects door open/close state with debounce to prevent false alarms.
-- Activates alarm when door is opened.
-- Outputs sensor data and door state over serial in CSV format:
+| Component          | Description                                |
+|--------------------|--------------------------------------------|
+| Arduino Uno/Nano   | Or any compatible board                    |
+| DHT22 Sensor       | Temperature and humidity sensor            |
+| 16x2 LCD (I2C)     | With I2C backpack (default address 0x27)   |
+| Relay Module (2x)  | To control heater and humidifier           |
+| Reed Switch        | For detecting door open/closed state       |
+| Heater Element     | Incubator heating                          |
+| Humidifier         | Ultrasonic or resistive humidifier         |
+| Jumper Wires       | Male-to-male or male-to-female             |
+| Power Supply       | As per heating/humidifier requirements     |
 
-  temperature,humidity,door_state
+---
 
-  Example:
+## 🔌 Pin Connections
 
-  36.5,85.0,OPEN
+| Component           | Arduino Pin | Notes                         |
+|--------------------|-------------|-------------------------------|
+| DHT22              | D2          | Data pin only                 |
+| Heater Relay       | D3          | IN1                           |
+| Humidifier Relay   | D4          | IN2                           |
+| Reed Switch        | D5          | Pull-up resistor enabled      |
+| I2C LCD (SDA/SCL)  | A4/A5       | For Uno (check your board)    |
 
-- Watchdog timer enabled with 8-second timeout to reset if code hangs.
+---
 
----------------------------------------------------------------------
+## 🧠 Code Behavior
 
-Serial Communication
+- **Temperature < 37.5°C** → Heater ON  
+- **Humidity < 55% RH** → Humidifier ON  
+- **Reed switch HIGH** → Door CLOSED  
+- **Reed switch LOW** → Door OPEN  
 
-- Serial commands for controlling candling relay are currently disabled.
-- Sensor data is continuously sent every 2 seconds over serial.
-- Future updates will enable serial control of the candling relay.
+Every 2 seconds, data is printed to the Serial Monitor like:
 
----------------------------------------------------------------------
+Temp:37.4,Humidity:54.2,Door:CLOSED,Heater:ON,Humidifier:ON
 
-Usage
+---
 
-1. Connect DHT22 sensor, door switch, candling relay, and alarm to the pins above.
-2. Upload the Arduino sketch.
-3. Open Serial Monitor at 9600 baud to see sensor readings and door status.
-4. Door alarm triggers automatically when the door opens.
+## 💻 Serial Data Format
 
----------------------------------------------------------------------
+The serial data is structured as:
 
-Future Improvements
+Temp:<float>,Humidity:<float>,Door:<OPEN/CLOSED>,Heater:<ON/OFF>,Humidifier:<ON/OFF>
 
-- Add serial command processing for candling relay control.
-- Integrate with Python or other applications for remote monitoring and control.
+This format is ideal for Python parsing, logging, or plotting via serial.
 
----------------------------------------------------------------------
+---
 
-Dependencies
+## 📚 Libraries Required
+
+Install the following via **Arduino Library Manager**:
 
 - DHT sensor library: https://github.com/adafruit/DHT-sensor-library
-- Arduino AVR Watchdog Timer (built into Arduino AVR core)
+- LiquidCrystal_I2C: https://github.com/johnrickman/LiquidCrystal_I2C
 
----------------------------------------------------------------------
+---
 
-License
+## 🧪 Future Improvements (Suggestions)
 
-MIT License — free and open source.
+- Add buzzer or LED for alerts  
+- Include fan or ventilation control  
+- Implement PID control for stability  
+- Log data to SD card or send to cloud  
+
+---
+
+## 📜 License
+
+MIT License — free to use, modify, and distribute.
+
+---
+
+## 🧵 Author
+
+Built with ❤️ using Arduino by **YourNameHere**
