@@ -18,10 +18,13 @@ DHT dht(DHTPIN, DHTTYPE);
 // Reed switch pin
 #define REED_SWITCH_PIN 5
 
-// Thresholds
+// Temperature thresholds
 const float HEATER_ON_THRESHOLD = 37.0;   // Turn heater ON below this temp
 const float HEATER_OFF_THRESHOLD = 37.5;  // Turn heater OFF above this temp
-float targetHumidity = 55.0;
+
+// Humidity thresholds
+const float HUMIDIFIER_ON_THRESHOLD = 50.0;  // Turn humidifier ON below this
+const float HUMIDIFIER_OFF_THRESHOLD = 55.0; // Turn humidifier OFF above this
 
 // Global state variables
 bool heaterOn = false;
@@ -39,9 +42,9 @@ void setup() {
   pinMode(HUMIDIFIER_RELAY_PIN, OUTPUT);
   pinMode(REED_SWITCH_PIN, INPUT_PULLUP);
 
-  // Initialize relays to OFF state
-  digitalWrite(HEATER_RELAY_PIN, HIGH); // Heater OFF
-  digitalWrite(HUMIDIFIER_RELAY_PIN, HIGH); // Humidifier OFF
+  // Initialize relays to OFF state (HIGH signal for NC relays)
+  digitalWrite(HEATER_RELAY_PIN, LOW); // Heater OFF (NC circuit open)
+  digitalWrite(HUMIDIFIER_RELAY_PIN, LOW); // Humidifier OFF (NC circuit open)
   heaterOn = false;
   humidifierOn = false;
 
@@ -82,48 +85,49 @@ void loop() {
     return;
   }
 
-  // Control heater with hysteresis (thermostat behavior)
+  // Control heater with hysteresis (NC relay logic)
   if (temp <= HEATER_ON_THRESHOLD && !heaterOn) {
-    digitalWrite(HEATER_RELAY_PIN, HIGH); // Heater ON
+    digitalWrite(HEATER_RELAY_PIN, HIGH); // Close NC circuit - Heater ON
     heaterOn = true;
   } 
   else if (temp >= HEATER_OFF_THRESHOLD && heaterOn) {
-    digitalWrite(HEATER_RELAY_PIN, LOW); // Heater OFF
+    digitalWrite(HEATER_RELAY_PIN, LOW); // Open NC circuit - Heater OFF
     heaterOn = false;
   }
 
-  // Control humidifier (simple threshold)
-  if (humidity < targetHumidity && !humidifierOn) {
-    digitalWrite(HUMIDIFIER_RELAY_PIN, LOW); // Humidifier ON
+  // Control humidifier with hysteresis (NC relay logic)
+  if (humidity <= HUMIDIFIER_ON_THRESHOLD && !humidifierOn) {
+    digitalWrite(HUMIDIFIER_RELAY_PIN, HIGH); // Close NC circuit - Humidifier ON
     humidifierOn = true;
   } 
-  else if (humidity >= targetHumidity && humidifierOn) {
-    digitalWrite(HUMIDIFIER_RELAY_PIN, HIGH); // Humidifier OFF
+  else if (humidity >= HUMIDIFIER_OFF_THRESHOLD && humidifierOn) {
+    digitalWrite(HUMIDIFIER_RELAY_PIN, LOW); // Open NC circuit - Humidifier OFF
     humidifierOn = false;
   }
 
   // LCD Display
   lcd.setCursor(0, 0);
-  lcd.print("--=[ DAY 00 ]=--");
-
-  lcd.setCursor(2, 1);
+  lcd.print("--=[ DAY 00 ]==-");
+  
+  lcd.setCursor(0, 1);
   lcd.print("T:");
   lcd.print(temp, 1);
-  lcd.print("C H:");
-  lcd.print(humidity, 0);
-  lcd.print("%");
+  lcd.print("C ");
+  lcd.print("H:");
+  lcd.print(humidity, 1);
+  lcd.print("% ");
 
-  // Serial output (guarded)
+  // Serial output
   if (Serial) {
     Serial.print("Temp:");
     Serial.print(temp);
-    Serial.print(",Humidity:");
+    Serial.print(", Humidity:");
     Serial.print(humidity);
-    Serial.print(",Door:");
+    Serial.print(", Door:");
     Serial.print(doorClosed ? "CLOSED" : "OPEN");
-    Serial.print(",Heater:");
+    Serial.print(", Heater:");
     Serial.print(heaterOn ? "ON" : "OFF");
-    Serial.print(",Humidifier:");
+    Serial.print(", Humidifier:");
     Serial.println(humidifierOn ? "ON" : "OFF");
   }
 
