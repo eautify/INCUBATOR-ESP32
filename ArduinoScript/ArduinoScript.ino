@@ -14,10 +14,10 @@ DHT dht(DHTPIN, DHTTYPE);
 // Relay control pins
 #define HEATER_RELAY_PIN 3
 #define HUMIDIFIER_RELAY_PIN 4
-
 // Reed switch pin
 #define REED_SWITCH_PIN 5
-
+// Candling Pin
+#define CANDLING_PIN 6
 // Temperature thresholds
 const float HEATER_ON_THRESHOLD = 37.0;   // Turn heater ON below this temp
 const float HEATER_OFF_THRESHOLD = 37.5;  // Turn heater OFF above this temp
@@ -29,7 +29,8 @@ const float HUMIDIFIER_OFF_THRESHOLD = 55.0; // Turn humidifier OFF above this
 // Global state variables
 bool heaterOn = false;
 bool humidifierOn = false;
-
+bool candlingOn = false;
+int dayCounter = 0;
 void setup() {
   Serial.begin(9600);
   Wire.setClock(10000); // Optional - remove if not necessary
@@ -41,10 +42,12 @@ void setup() {
   pinMode(HEATER_RELAY_PIN, OUTPUT);
   pinMode(HUMIDIFIER_RELAY_PIN, OUTPUT);
   pinMode(REED_SWITCH_PIN, INPUT_PULLUP);
+  pinMode(CANDLING_PIN, OUTPUT);
 
   // Initialize relays to OFF state (HIGH signal for NC relays)
   digitalWrite(HEATER_RELAY_PIN, LOW); // Heater OFF (NC circuit open)
   digitalWrite(HUMIDIFIER_RELAY_PIN, LOW); // Humidifier OFF (NC circuit open)
+  digitalWrite(CANDLING_PIN, HIGH);
   heaterOn = false;
   humidifierOn = false;
 
@@ -107,7 +110,11 @@ void loop() {
 
   // LCD Display
   lcd.setCursor(0, 0);
-  lcd.print("--=[ DAY 00 ]==-");
+  lcd.print("--=[ DAY ");
+  if (dayCounter < 10) lcd.print("0");  // pad single digits with 0
+  lcd.print(dayCounter);                // print the actual number
+  lcd.print(" ]==-");
+
   
   lcd.setCursor(0, 1);
   lcd.print("T:");
@@ -131,5 +138,41 @@ void loop() {
     Serial.println(humidifierOn ? "ON" : "OFF");
   }
 
+  handleSerialInput();
   delay(2000);
+}
+
+void handleSerialInput() {
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n'); // read the full line
+
+    input.trim(); // remove any \r or space
+
+    if (input.length() >= 3 && input.charAt(1) == ':') {
+      char device = input.charAt(0);
+      String command = input.substring(2);
+
+      if (device == 'C') {
+        digitalWrite(CANDLING_PIN, command == "1" ? LOW : HIGH);
+        candlingOn = (command == "1");
+      } else if (device == 'D') {
+        int newDay = command.toInt();
+        if (newDay >= 0 && newDay <= 99) {
+          dayCounter = newDay;
+        } else {
+          dayCounter = 99;
+        }
+      } else if (device == 'H') {
+        // override heater (manual mode)
+      } else if (device == 'U') {
+        // control humidifier
+      } else if (device == 'S') {
+        // maybe print status
+      } else {
+
+      }
+    } else {
+
+    }
+  }
 }
