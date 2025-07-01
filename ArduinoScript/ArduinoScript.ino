@@ -15,66 +15,77 @@ DHT dht(DHTPIN, DHTTYPE);
 // Relay control pins
 #define HEATER_RELAY_PIN 3
 #define HUMIDIFIER_RELAY_PIN 4
-#define REED_SWITCH_PIN 5 // Reed switch pin
-#define CANDLING_PIN 6    // Candling Pin
+#define REED_SWITCH_PIN 5
+#define CANDLING_PIN 6
 
-// Temperature thresholds
-const float HEATER_ON_THRESHOLD = 37.0;
-const float HEATER_OFF_THRESHOLD = 37.5;
-
-// Humidity thresholds
-const float HUMIDIFIER_ON_THRESHOLD = 50.0;
-const float HUMIDIFIER_OFF_THRESHOLD = 55.0;
+// --- NEW: Settings Struct ---
+// This struct holds all the values we want to save in EEPROM.
+// It makes reading and writing to memory much cleaner.
+struct Settings {
+  float temp_on_threshold;
+  float temp_off_threshold;
+  float humid_on_threshold;
+  float humid_off_threshold;
+  int dayCounter;
+};
+Settings settings; // Create a global instance of our settings
 
 // Global state variables
 bool heaterOn = false;
 bool humidifierOn = false;
 bool candlingOn = false;
-int dayCounter = 0;
+
+// --- Helper function to save settings to EEPROM ---
+void saveSettings() {
+  EEPROM.put(0, settings);
+}
 
 void setup() {
   Serial.begin(9600);
-  Wire.setClock(10000); // Optional: remove if not necessary
+  Wire.setClock(10000);
   lcd.init();
   lcd.backlight();
-
   dht.begin();
 
   pinMode(HEATER_RELAY_PIN, OUTPUT);
   pinMode(HUMIDIFIER_RELAY_PIN, OUTPUT);
-  pinMode(REED_SWITCH_PIN, INPUT_PULLUP);
+  pinMode(REED_SWITCH_PIN, INPUT_PULLUP); // Use internal pull-up for stability
   pinMode(CANDLING_PIN, OUTPUT);
 
-  // Initialize relays to OFF state (LOW signal for NC relays)
   digitalWrite(HEATER_RELAY_PIN, LOW);
   digitalWrite(HUMIDIFIER_RELAY_PIN, LOW);
-  digitalWrite(CANDLING_PIN, HIGH); // HIGH keeps candling OFF
+  digitalWrite(CANDLING_PIN, HIGH);
   heaterOn = false;
   humidifierOn = false;
 
-  // Read dayCounter from EEPROM and validate
-  EEPROM.get(0, dayCounter);
-  if (dayCounter < 0 || dayCounter > 99) {
-    dayCounter = 0;
-    EEPROM.put(0, dayCounter);
+  // --- NEW: Load settings from EEPROM on startup ---
+  EEPROM.get(0, settings);
+
+  // Validate the loaded settings. If they seem invalid (like after a fresh
+  // flash), initialize them with safe default values and save them.
+  if (isnan(settings.temp_on_threshold) || settings.temp_on_threshold <= 0 || settings.dayCounter < 0 || settings.dayCounter > 99) {
+    settings.temp_on_threshold = 37.2;
+    settings.temp_off_threshold = 37.7;
+    settings.humid_on_threshold = 55.0;
+    settings.humid_off_threshold = 60.0;
+    settings.dayCounter = 0;
+    saveSettings(); // Save these defaults to EEPROM
   }
 
-  wdt_enable(WDTO_4S); // Enable 4-second watchdog
+  wdt_enable(WDTO_4S);
 }
 
 void loop() {
-  wdt_reset(); // Reset watchdog at the start of each loop
+  wdt_reset();
 
   float temp = dht.readTemperature();
   float humidity = dht.readHumidity();
   bool doorClosed = digitalRead(REED_SWITCH_PIN) == LOW;
 
-  // Variables for display/serial values (ERR or float string)
   char tempDisplay[8];
   char humDisplay[8];
 
   if (isnan(temp) || isnan(humidity)) {
-    // DHT sensor error: turn off relays, set display strings to "ERR"
     if (heaterOn) {
       digitalWrite(HEATER_RELAY_PIN, LOW);
       heaterOn = false;
@@ -86,39 +97,35 @@ void loop() {
     strcpy(tempDisplay, "ERR");
     strcpy(humDisplay, "ERR");
 
-    // LCD display for sensor error
     lcd.setCursor(0, 0);
     lcd.print("DHT Sensor Error");
     lcd.setCursor(0, 1);
     lcd.print("  Fix DHT now!  ");
   } else {
-    // Normal operation: convert floats to strings for LCD/Serial
     dtostrf(temp, 4, 1, tempDisplay);
     dtostrf(humidity, 4, 1, humDisplay);
 
-    // Control heater with hysteresis (NC relay logic)
-    if (temp <= HEATER_ON_THRESHOLD && !heaterOn) {
+    // --- UPDATED: Use dynamic settings from the settings struct ---
+    if (temp <= settings.temp_on_threshold && !heaterOn) {
       digitalWrite(HEATER_RELAY_PIN, HIGH);
       heaterOn = true;
-    } else if (temp >= HEATER_OFF_THRESHOLD && heaterOn) {
+    } else if (temp >= settings.temp_off_threshold && heaterOn) {
       digitalWrite(HEATER_RELAY_PIN, LOW);
       heaterOn = false;
     }
 
-    // Control humidifier with hysteresis (NC relay logic)
-    if (humidity <= HUMIDIFIER_ON_THRESHOLD && !humidifierOn) {
+    if (humidity <= settings.humid_on_threshold && !humidifierOn) {
       digitalWrite(HUMIDIFIER_RELAY_PIN, HIGH);
       humidifierOn = true;
-    } else if (humidity >= HUMIDIFIER_OFF_THRESHOLD && humidifierOn) {
+    } else if (humidity >= settings.humid_off_threshold && humidifierOn) {
       digitalWrite(HUMIDIFIER_RELAY_PIN, LOW);
       humidifierOn = false;
     }
 
-    // LCD display for normal operation
     lcd.setCursor(0, 0);
     lcd.print("--=[ DAY ");
-    if (dayCounter < 10) lcd.print("0");
-    lcd.print(dayCounter);
+    if (settings.dayCounter < 10) lcd.print("0");
+    lcd.print(settings.dayCounter);
     lcd.print(" ]==-");
 
     lcd.setCursor(0, 1);
@@ -130,10 +137,8 @@ void loop() {
     lcd.print("% ");
   }
 
-  // Handle incoming serial commands
   handleSerialInput();
 
-  // Serial output: consistent format for all states
   Serial.print("Temp:");
   Serial.print(tempDisplay);
   Serial.print(",Humidity:");
@@ -145,7 +150,7 @@ void loop() {
   Serial.print(",Humidifier:");
   Serial.println(humidifierOn ? "ON" : "OFF");
 
-  Serial.flush(); // Ensure serial data is sent before delay
+  Serial.flush();
   delay(2000);
 }
 
@@ -154,28 +159,39 @@ void handleSerialInput() {
     String input = Serial.readStringUntil('\n');
     input.trim();
 
-    if (input.length() >= 3 && input.charAt(1) == ':') {
+    if (input.length() >= 4 && input.charAt(2) == ':') {
+      String prefix = input.substring(0, 2);  // "TH", "TF", etc.
+      String valueStr = input.substring(3);   // "37.2", etc.
+      float value = valueStr.toFloat();
+
+      if (prefix == "TH") {
+        settings.temp_on_threshold = value;
+      } else if (prefix == "TF") {
+        settings.temp_off_threshold = value;
+      } else if (prefix == "HH") {
+        settings.humid_on_threshold = value;
+      } else if (prefix == "HF") {
+        settings.humid_off_threshold = value;
+      }
+      saveSettings();
+    } 
+    else if (input.length() >= 3 && input.charAt(1) == ':') {
       char device = input.charAt(0);
       String command = input.substring(2);
 
-      if (device == 'C') { // Candling control
+      if (device == 'C') {
         digitalWrite(CANDLING_PIN, command == "1" ? LOW : HIGH);
         candlingOn = (command == "1");
-      } else if (device == 'D') { // Day counter set
+      } else if (device == 'D') {
         int newDay = command.toInt();
         if (newDay >= 0 && newDay <= 99) {
-          dayCounter = newDay;
-          EEPROM.put(0, dayCounter);
-        } else {
-          dayCounter = 99; // Invalid input defaults to 99
-          EEPROM.put(0, dayCounter);
+          settings.dayCounter = newDay;
+          saveSettings();
         }
-      } else if (device == 'R') {
-        if (command == "reset") {
-          Serial.flush();             // Ensure all serial data is sent
-          wdt_enable(WDTO_15MS);      // Enable watchdog with 15ms timeout
-          while (true) {}             // Wait for reset
-        }
+      } else if (device == 'R' && command == "reset") {
+        Serial.flush();
+        wdt_enable(WDTO_15MS);
+        while (true) {}
       }
     }
   }
