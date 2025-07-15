@@ -4,7 +4,7 @@ This is an Arduino-based incubator controller that:
 
 - Monitors **temperature** and **humidity** using a **DHT22 sensor**
 - Displays readings on a **16x2 I2C LCD**
-- Controls a **heater** and **humidifier** using **relays**
+- Controls a **heater**, **humidifier** amd **LED Candling** using **relays**
 - Detects **door status** via a **reed switch**
 - Sends all data to the **Serial Monitor** for integration with Python or logging tools
 
@@ -38,12 +38,13 @@ This is an Arduino-based incubator controller that:
 
 ## 🔌 Pin Connections
 
-| Component           | Arduino Pin | Notes                         |
+| Component          | Arduino Pin | Notes                         |
 |--------------------|-------------|-------------------------------|
 | DHT22              | D2          | Data pin only                 |
 | Heater Relay       | D3          | IN1                           |
-| Humidifier Relay   | D4          | IN2                           |
+| Humidifier Relay   | D4          | IN3                           |
 | Reed Switch        | D5          | Pull-up resistor enabled      |
+| LED Candling Relay | D6          | IN2						   |
 | I2C LCD (SDA/SCL)  | A4/A5       | For Uno (check your board)    |
 
 ---
@@ -77,24 +78,3 @@ Install the following via **Arduino Library Manager**:
 
 - DHT sensor library: https://github.com/adafruit/DHT-sensor-library
 - LiquidCrystal_I2C: https://github.com/johnrickman/LiquidCrystal_I2C
-
----
-
-## 🧪 Future Improvements (Suggestions)
-
-- Add buzzer or LED for alerts  
-- Include fan or ventilation control  
-- Implement PID control for stability  
-- Log data to SD card or send to cloud  
-
----
-
-## 📜 License
-
-MIT License — free to use, modify, and distribute.
-
----
-
-## 🧵 Author
-
-Built with ❤️ using Arduino by eautify
