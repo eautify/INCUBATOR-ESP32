@@ -80,7 +80,7 @@ void loop() {
 
   float temp = dht.readTemperature();
   float humidity = dht.readHumidity();
-  bool doorClosed = digitalRead(REED_SWITCH_PIN) == LOW;
+  bool doorClosed = digitalRead(REED_SWITCH_PIN) == HIGH;
 
   char tempDisplay[8];
   char humDisplay[8];
