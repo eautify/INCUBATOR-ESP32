@@ -17,6 +17,7 @@ DHT dht(DHTPIN, DHTTYPE);
 #define HUMIDIFIER_RELAY_PIN 4
 #define REED_SWITCH_PIN 5
 #define CANDLING_PIN 6
+#define ROLLER_PIN 7
 
 // --- NEW: Settings Struct ---
 // This struct holds all the values we want to save in EEPROM.
@@ -34,6 +35,7 @@ Settings settings; // Create a global instance of our settings
 bool heaterOn = false;
 bool humidifierOn = false;
 bool candlingOn = false;
+bool rollerOn = false;
 
 // --- Helper function to save settings to EEPROM ---
 void saveSettings() {
@@ -51,12 +53,15 @@ void setup() {
   pinMode(HUMIDIFIER_RELAY_PIN, OUTPUT);
   pinMode(REED_SWITCH_PIN, INPUT_PULLUP); // Use internal pull-up for stability
   pinMode(CANDLING_PIN, OUTPUT);
+  pinMode(ROLLER_PIN, OUTPUT);
 
   digitalWrite(HEATER_RELAY_PIN, LOW);
   digitalWrite(HUMIDIFIER_RELAY_PIN, LOW);
   digitalWrite(CANDLING_PIN, HIGH);
+  digitalWrite(ROLLER_PIN, HIGH);
   heaterOn = false;
   humidifierOn = false;
+  rollerOn = false;
 
   // --- NEW: Load settings from EEPROM on startup ---
   EEPROM.get(0, settings);
@@ -182,6 +187,9 @@ void handleSerialInput() {
       if (device == 'C') {
         digitalWrite(CANDLING_PIN, command == "1" ? LOW : HIGH);
         candlingOn = (command == "1");
+      } else if (device == 'L') {
+        digitalWrite(ROLLER_PIN, command == "1" ? LOW : HIGH);
+        rollerOn = (command == "1");
       } else if (device == 'D') {
         int newDay = command.toInt();
         if (newDay >= 0 && newDay <= 99) {
