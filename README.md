@@ -95,44 +95,354 @@ After upload, open **Serial Monitor** (115200 baud) to see status messages.
 
 ## MQTT Setup (External Broker)
 
-The controller publishes telemetry and can receive commands. You need an MQTT broker reachable by the ESP32.
+This firmware uses MQTT so the ESP32 can publish incubator readings and receive remote commands. MQTT needs a broker, which is the middle server that receives messages from one client and forwards them to other clients subscribed to the same topic.
 
-### Quick broker setup on a local machine (Linux / Raspberry Pi):
-```bash
-sudo apt install mosquitto mosquitto-clients
-sudo systemctl enable mosquitto
-sudo systemctl start mosquitto
+For this project, use **Eclipse Mosquitto only** as the external broker.
+
+> Current firmware expectation: plain MQTT on port `1883`, no TLS, and no MQTT username/password. This matches the code in `ArduinoScript.ino`, where `mqttClient.setServer(mqtt_server, 1883)` is used and the ESP32 connects with `mqttClient.connect(mqtt_client_id)`. Do not expose this broker directly to the public internet unless you first add authentication/TLS support to the firmware.
+
+### What you need
+
+| Item | Where to get it | Purpose |
+|------|-----------------|---------|
+| Eclipse Mosquitto broker | https://mosquitto.org/download/ | The MQTT server that the ESP32 connects to. |
+| MQTT Explorer | https://mqtt-explorer.com/ | Optional desktop tool for checking topics, telemetry, and test commands. |
+| ESP32 firmware files | This repository, especially `ArduinoScript/ArduinoScript.ino` and `ArduinoScript/secrets.h` | The MQTT client that publishes and receives incubator data. |
+| Broker computer IP address | From `ipconfig` on Windows, or your router client list | The address placed in `MQTT_SERVER`. |
+
+### Recommended setup choice
+
+Use **plain MQTT on port `1883` inside your local WiFi/LAN**.
+
+This is recommended for this firmware because the code already uses a normal `WiFiClient`, not `WiFiClientSecure`. MQTT over TLS normally uses port `8883`, certificates, and secure client code changes. If you are just setting up the incubator on your own WiFi network, use port `1883`.
+
+### Network layout
+
+Your setup should look like this:
+
+```text
+ESP32 Incubator  --->  WiFi Router  --->  Computer running Mosquitto
+       |                                      |
+       | publishes/subscribes MQTT            | broker IP goes in secrets.h
+       |                                      |
+       +-------------- MQTT port 1883 --------+
 ```
-For Windows/macOS, install **Mosquitto** or use a public broker (not recommended for production).
 
-### Using a cloud broker (e.g., HiveMQ Cloud, EMQX Cloud):
-- Create an instance, note the hostname and port (usually 1883 for plain TCP, or 8883 for TLS – TLS not supported by this firmware).
-- In `secrets.h`, set `MQTT_SERVER` to the broker’s IP or hostname.
+The ESP32 and the Mosquitto computer must be on the same network unless you have intentionally configured routing/VPN access.
 
-> **No username/password** – the firmware does not implement MQTT authentication. Secure your broker network or add authentication in `mqttClient.connect()` if required.
+### Step 1: Install Mosquitto on Windows
+
+1. Open the official Mosquitto download page:
+   https://mosquitto.org/download/
+2. Under **Windows**, download the latest `mosquitto-...-install-windows-x64.exe` installer.
+3. Run the installer.
+4. Accept the default install location unless you have a reason to change it.
+5. The usual install folder is:
+
+```text
+C:\Program Files\mosquitto
+```
+
+Expected result:
+
+```text
+C:\Program Files\mosquitto\mosquitto.exe
+C:\Program Files\mosquitto\mosquitto.conf
+C:\Program Files\mosquitto\mosquitto_sub.exe
+C:\Program Files\mosquitto\mosquitto_pub.exe
+```
+
+<img src="https://i.imgur.com/iv75Lzr.png" alt="Mosquitto installed folder showing" width="650">
+
+
+### Step 2: Configure Mosquitto for ESP32 LAN access
+
+Mosquitto 2.x commonly needs an explicit listener before other devices on the network can connect. Open this file as Administrator:
+
+```text
+C:\Program Files\mosquitto\mosquitto.conf
+```
+
+Add these lines near the end of the file:
+
+```conf
+listener 1883 0.0.0.0
+allow_anonymous true
+```
+
+What these lines mean:
+
+| Line | Meaning |
+|------|---------|
+| `listener 1883 0.0.0.0` | Mosquitto listens for MQTT connections on port `1883` from network devices, not only from the broker computer itself. |
+| `allow_anonymous true` | Allows clients without username/password. This is required by the current firmware unless you edit `mqttClient.connect()` to use credentials. |
+
+Save the file.
+
+Expected config snippet:
+
+```conf
+# ESP32 incubator local MQTT listener
+listener 1883 0.0.0.0
+allow_anonymous true
+```
+
+<img src="https://i.imgur.com/1FgSqjX.png" alt="mosquitto.conf with the listener and allow_anonymous lines visible" width="650">
+
+
+### Step 3: Start or restart Mosquitto
+
+If Mosquitto is installed as a Windows service, restart it:
+
+```powershell
+Restart-Service mosquitto
+```
+
+If you want to run it manually for testing, open PowerShell as Administrator:
+
+```powershell
+cd "C:\Program Files\mosquitto"
+.\mosquitto.exe -c .\mosquitto.conf -v
+```
+
+Expected manual broker output:
+
+```text
+mosquitto version ... starting
+Config loaded from .\mosquitto.conf.
+Opening ipv4 listen socket on port 1883.
+mosquitto version ... running
+```
+
+Leave this window open while testing. The `-v` flag enables verbose logs, so you should later see ESP32 connection, subscribe, and publish messages.
+
+<img src="https://i.imgur.com/ZVvIyy3.png" alt="CMD showing Mosquitto running and listening on port 1883" width="650">
+
+
+### Step 4: Allow port 1883 through Windows Firewall
+
+If the ESP32 cannot connect, Windows Firewall may be blocking inbound MQTT traffic.
+
+1. Open **Windows Defender Firewall with Advanced Security**.
+2. Go to **Inbound Rules**.
+3. Create a **New Rule**.
+4. Choose **Port**.
+5. Choose **TCP** and enter:
+
+```text
+1883
+```
+
+6. Choose **Allow the connection**.
+7. Apply it to your private network profile.
+8. Name it something clear, for example:
+
+```text
+Mosquitto MQTT 1883
+```
+
+Expected result: another device on the same WiFi/LAN can connect to the broker computer on TCP port `1883`.
+
+### Step 5: Find the broker computer IP address
+
+The ESP32 needs the IP address of the computer running Mosquitto.
+
+On the Mosquitto computer, open PowerShell or Command Prompt:
+
+```powershell
+ipconfig
+```
+
+Look for the active WiFi or Ethernet adapter and copy the **IPv4 Address**.
+
+Example:
+
+```text
+Wireless LAN adapter Wi-Fi:
+   IPv4 Address. . . . . . . . . . . : 192.168.1.100
+```
+
+Use the IPv4 address, not `localhost` and not `127.0.0.1`.
+
+Important:
+
+| Address | Use it for ESP32? | Why |
+|---------|-------------------|-----|
+| `192.168.x.x` / `10.x.x.x` / `172.16-31.x.x` | Yes | Normal local network address reachable by the ESP32. |
+| `localhost` | No | Means "this same device"; on the ESP32 it would point to the ESP32 itself. |
+| `127.0.0.1` | No | Same problem as `localhost`. |
+
+### Step 6: Configure the ESP32 MQTT server
+
+Create your real secrets file if you have not already done so:
+
+```text
+ArduinoScript/secrets.example.h  ->  ArduinoScript/secrets.h
+```
+
+Edit `ArduinoScript/secrets.h`:
+
+```cpp
+#pragma once
+
+const char* WIFI_SSID = "YourWiFiName";
+const char* WIFI_PASSWORD = "YourWiFiPassword";
+const char* MQTT_SERVER = "192.168.1.100";
+```
+
+Replace `192.168.1.100` with the IPv4 address of the computer running Mosquitto.
+
+Make sure:
+
+| Setting | Correct value |
+|---------|---------------|
+| `WIFI_SSID` | The same WiFi/LAN used by the Mosquitto computer. |
+| `WIFI_PASSWORD` | The password for that WiFi. |
+| `MQTT_SERVER` | The Mosquitto computer IPv4 address. |
+| MQTT port | `1883`, already set in `ArduinoScript.ino`. |
+| MQTT username/password | None, because the current firmware does not send credentials. |
+
+
+### Step 7: Upload and check Serial Monitor
+
+Upload the firmware to the ESP32, then open Serial Monitor at:
+
+```text
+115200 baud
+```
+
+Expected successful output:
+
+```text
+Connecting to WiFi...
+WiFi connected
+IP address: 192.168.1.xxx
+Attempting MQTT connection...connected
+```
+
+If MQTT connects, the ESP32 subscribes to:
+
+```text
+incubator/commands
+```
+
+It also publishes current settings after connecting.
+
+### Step 8: Test with Mosquitto command-line tools
+
+Open a second PowerShell window on the Mosquitto computer:
+
+```powershell
+cd "C:\Program Files\mosquitto"
+```
+
+Subscribe to all incubator topics:
+
+```powershell
+.\mosquitto_sub.exe -h localhost -p 1883 -t "incubator/#" -v
+```
+
+Expected telemetry output after the ESP32 publishes:
+
+```text
+incubator/settings {"type":"settings","temp_on":37.2,"temp_off":37.7,"humid_on":55.0,"humid_off":60.0,"day":0}
+incubator/telemetry {"temp":37.4,"humidity":58.2,"door":"closed","heater":"OFF","humidifier":"OFF","roller":"OFF","day":0,"mode":"ONLINE"}
+```
+
+Open a third PowerShell window and publish a test command:
+
+```powershell
+cd "C:\Program Files\mosquitto"
+.\mosquitto_pub.exe -h localhost -p 1883 -t "incubator/commands" -m "system:getsettings:1"
+```
+
+Expected result:
+
+```text
+incubator/settings {"type":"settings","temp_on":37.2,"temp_off":37.7,"humid_on":55.0,"humid_off":60.0,"day":0}
+```
+
+### Step 9: Optional quick check with MQTT Explorer
+
+MQTT Explorer gives a visual topic tree. Download it from:
+
+```text
+https://mqtt-explorer.com/
+```
+
+Create a connection with:
+
+| Field | Value |
+|-------|-------|
+| Host | Mosquitto computer IP address, for example `192.168.1.100` |
+| Port | `1883` |
+| Username | Leave blank |
+| Password | Leave blank |
+| Encryption / TLS | Off |
+
+After connecting, you should see the `incubator` topic tree when the ESP32 publishes data.
+
 
 ### Topics used by the firmware
 
-| Topic                     | Direction | Description                             |
-|---------------------------|-----------|-----------------------------------------|
-| `incubator/telemetry`     | Publish   | JSON with temp, humidity, states, day   |
-| `incubator/commands`      | Subscribe | Commands for thresholds and manual control |
-| `incubator/settings`      | Publish   | Current thresholds & day counter        |
-| `incubator/errors`        | Publish   | Error messages (e.g., sensor failure)   |
+| Topic | Direction from ESP32 | Description |
+|-------|----------------------|-------------|
+| `incubator/telemetry` | Publish | Live JSON payload with temperature, humidity, door state, relay states, day counter, and mode. |
+| `incubator/commands` | Subscribe | Commands sent to the ESP32. Publish commands here from MQTT Explorer or `mosquitto_pub`. |
+| `incubator/settings` | Publish | Current configured thresholds and day counter. Published after MQTT connection and when settings are requested. |
+| `incubator/errors` | Publish | Error messages such as sensor failure. |
 
-Command format expected on `incubator/commands`:  
-`device:command:value`  
+### Command topic and payload format
+
+All commands are published to:
+
+```text
+incubator/commands
+```
+
+The payload format is:
+
+```text
+device:command:value
+```
+
 Examples:
-- `temp:on:37.2`   → set heater ON threshold to 37.2°C
-- `temp:off:37.7`  → set heater OFF threshold to 37.7°C
-- `humid:on:55.0`  → set humidifier ON threshold to 55%
-- `humid:off:60.0` → set humidifier OFF threshold to 60%
-- `heater:state:1` → manually turn heater ON (bypass hysteresis)
-- `system:day:5`   → set day counter to 5
-- `system:reset`   → restart ESP32
-- `system:mode:offline` → switch to local control (no MQTT)
 
-For a complete list, refer to the `handleMQTTCommand()` function in the source code.
+| Payload | What it does |
+|---------|--------------|
+| `temp:on:37.2` | Set heater ON threshold to `37.2 C`. |
+| `temp:off:37.7` | Set heater OFF threshold to `37.7 C`. |
+| `humid:on:55.0` | Set humidifier ON threshold to `55%`. |
+| `humid:off:60.0` | Set humidifier OFF threshold to `60%`. |
+| `heater:state:1` | Manually turn heater ON. |
+| `heater:state:0` | Manually turn heater OFF. |
+| `humidifier:state:1` | Manually turn humidifier ON. |
+| `humidifier:state:0` | Manually turn humidifier OFF. |
+| `roller:state:1` | Turn roller motor ON. |
+| `roller:state:0` | Turn roller motor OFF. |
+| `candling:state:1` | Turn candling LED ON. |
+| `candling:state:0` | Turn candling LED OFF. |
+| `system:day:5` | Set day counter to `5`. |
+| `system:getsettings:1` | Ask the ESP32 to publish current settings to `incubator/settings`. |
+| `system:mode:offline` | Switch to local/offline control. |
+| `system:mode:online` | Switch back to WiFi/MQTT mode. |
+| `system:reset:1` | Restart the ESP32. |
+
+For the complete command behavior, check the `handleMQTTCommand()` function in `ArduinoScript/ArduinoScript.ino`.
+
+### MQTT setup troubleshooting
+
+| Problem | What to check |
+|---------|---------------|
+| Serial Monitor repeats `Attempting MQTT connection...failed` | Mosquitto is not running, `MQTT_SERVER` is wrong, port `1883` is blocked, or ESP32 and broker are on different networks. |
+| Mosquitto only works from the broker computer | Check that `mosquitto.conf` has `listener 1883 0.0.0.0`, then restart Mosquitto. |
+| ESP32 uses WiFi but MQTT does not connect | Confirm the broker computer IP with `ipconfig`; do not use `localhost` in `secrets.h`. |
+| `mosquitto_sub` shows nothing | Wait for telemetry, confirm the ESP32 says MQTT connected, and subscribe to `incubator/#`. |
+| MQTT Explorer cannot connect | Use host `192.168.x.x`, port `1883`, TLS off, username/password blank. |
+| Connection is refused | Mosquitto is stopped, listening on another port, or the firewall is blocking inbound TCP `1883`. |
+| Connection times out | Network path issue: wrong IP, different WiFi network, guest WiFi isolation, router isolation, or firewall. |
+| You want username/password | Current firmware does not send credentials. Add credentials to `mqttClient.connect()` first, then configure a Mosquitto password file. |
+| You want TLS/port `8883` | Current firmware is not configured for MQTT TLS. This requires secure client changes and certificate handling before changing the broker to TLS. |
 
 ---
 
